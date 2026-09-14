@@ -27,36 +27,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Build runtime config
+      # TEMPORARY (branch claude/app-api-probe): this run executes the
+      # api.app.playtomic.io reachability probe instead of the monitor, so it
+      # can be triggered from the Actions UI (workflow_dispatch keys off the
+      # default-branch copy of this file, then runs the selected branch's copy).
+      # Do NOT merge this change to the default branch.
+      - name: Probe app API
         env:
-          CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
-          CALLMEBOT_API_KEY: ${{ secrets.CALLMEBOT_API_KEY }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          cp config.shared.toml config.runtime.toml
-          if [ -n "$CALLMEBOT_PHONE" ] && [ -n "$CALLMEBOT_API_KEY" ]; then
-            printf '\n[notifications.callmebot_whatsapp]\nphone = "%s"\napi_key = "%s"\n' \
-              "$CALLMEBOT_PHONE" \
-              "$CALLMEBOT_API_KEY" >> config.runtime.toml
-          fi
-          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
-            printf '\n[notifications.telegram]\nbot_token = "%s"\nchat_id = "%s"\n' \
-              "$TELEGRAM_BOT_TOKEN" \
-              "$TELEGRAM_CHAT_ID" >> config.runtime.toml
-          fi
-
-      - name: Run monitor
-        run: python3 playtomic_monitor.py --config config.runtime.toml
-
-      - name: Commit state changes
-        run: |
-          if git diff --quiet -- state/availability_state.json; then
-            echo "No state changes to commit."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add state/availability_state.json
-          git commit -m "Update Playtomic availability state"
-          git push
+          # Optional. If set, sent as "Authorization: Bearer <token>".
+          # Without it, a 401/JSON response still proves reachability.
+          PLAYTOMIC_ACCESS_TOKEN: ${{ secrets.PLAYTOMIC_ACCESS_TOKEN }}
+        run: python3 probe_playtomic_api.py
