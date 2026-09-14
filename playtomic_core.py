@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import sys
 import tomllib
 import urllib.error
 import urllib.parse
@@ -11,6 +13,59 @@ from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
+
+
+# Playtomic's edge (Cloudflare) 403s obvious bot User-Agents, so present a
+# realistic browser instead. Override with PLAYTOMIC_USER_AGENT if needed.
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+
+# Set PLAYTOMIC_DEBUG=1 to print request/response diagnostics to stderr.
+DEBUG = os.environ.get("PLAYTOMIC_DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _user_agent() -> str:
+    return os.environ.get("PLAYTOMIC_USER_AGENT", "").strip() or DEFAULT_USER_AGENT
+
+
+def _debug(message: str) -> None:
+    if DEBUG:
+        print(f"[playtomic-debug] {message}", file=sys.stderr, flush=True)
+
+
+def _describe_http_error(url: str, exc: urllib.error.HTTPError) -> str:
+    """Build a diagnostic string and log response headers/body when debugging.
+
+    A Cloudflare 403 usually explains itself in the response headers (server,
+    cf-ray, cf-mitigated, retry-after) and body, none of which the default
+    urllib error message shows.
+    """
+    interesting = ("server", "cf-ray", "cf-mitigated", "retry-after", "content-type")
+    header_bits = []
+    try:
+        for name in interesting:
+            value = exc.headers.get(name)
+            if value:
+                header_bits.append(f"{name}={value}")
+    except Exception:
+        pass
+
+    detail = f"HTTP {exc.code} {exc.reason} for {url}"
+    if header_bits:
+        detail += " | " + " ".join(header_bits)
+
+    _debug(detail)
+    if DEBUG:
+        try:
+            body = exc.read().decode("utf-8", "replace")
+            _debug(f"response body[:800]: {body[:800]!r}")
+        except Exception as read_exc:  # pragma: no cover - best-effort logging
+            _debug(f"could not read error body: {read_exc}")
+
+    return detail
 
 
 WEEKDAY_MAP = {
@@ -96,31 +151,39 @@ def resolve_config_path(config_path: str | Path | None = None) -> Path:
 
 
 def http_get_json(url: str) -> Any:
-    request = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "PlaytomicMonitor/1.0",
-            "Accept": "application/json",
-        },
-    )
+    headers = {
+        "User-Agent": _user_agent(),
+        "Accept": "application/json",
+        "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+    }
+    request = urllib.request.Request(url, headers=headers)
+    _debug(f"GET {url}")
+    _debug(f"request headers: {headers}")
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
+            _debug(f"-> {response.status} {response.headers.get('content-type')} (cf-ray={response.headers.get('cf-ray')})")
             return json.load(response)
+    except urllib.error.HTTPError as exc:
+        raise MonitorError(f"Request failed: {_describe_http_error(url, exc)}") from exc
     except urllib.error.URLError as exc:
         raise MonitorError(f"Request failed for {url}: {exc}") from exc
 
 
 def http_get_text(url: str) -> str:
-    request = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "PlaytomicMonitor/1.0",
-            "Accept": "text/html,application/xhtml+xml",
-        },
-    )
+    headers = {
+        "User-Agent": _user_agent(),
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+    }
+    request = urllib.request.Request(url, headers=headers)
+    _debug(f"GET {url}")
+    _debug(f"request headers: {headers}")
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
+            _debug(f"-> {response.status} {response.headers.get('content-type')} (cf-ray={response.headers.get('cf-ray')})")
             return response.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        raise MonitorError(f"Request failed: {_describe_http_error(url, exc)}") from exc
     except urllib.error.URLError as exc:
         raise MonitorError(f"Request failed for {url}: {exc}") from exc
 

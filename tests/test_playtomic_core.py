@@ -60,8 +60,8 @@ class ConfiguredClubMetadataTests(unittest.TestCase):
         self.assertEqual(
             [club_run.club.tenant_id for club_run in club_runs],
             [
-                "280bfe06-18e4-464f-a1f3-edc0bee96e35",
-                "cf58118a-353b-4ec1-a51e-ea52acc99063",
+                "a8b0e7b9-7db0-4c45-8569-28bf775e9208",
+                "a51996c7-343f-4ff5-b6c9-902fbf06ba7a",
             ],
         )
 
