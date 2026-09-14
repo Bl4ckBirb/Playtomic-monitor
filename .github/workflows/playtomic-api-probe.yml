@@ -1,0 +1,27 @@
+name: Playtomic API Probe
+
+# Manual-only diagnostic: checks whether api.app.playtomic.io is reachable
+# from the runner (the public playtomic.com endpoint is edge-blocked / 403).
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    # Same runner class as the monitor so the network/edge behaviour matches.
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Probe app API
+        env:
+          # Optional. If set, sent as "Authorization: Bearer <token>".
+          # Without it, a 401/JSON response still proves reachability.
+          PLAYTOMIC_ACCESS_TOKEN: ${{ secrets.PLAYTOMIC_ACCESS_TOKEN }}
+        run: python3 probe_playtomic_api.py
